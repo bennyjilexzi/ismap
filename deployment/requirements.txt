@@ -1,0 +1,11 @@
+flask
+flask-cors
+sqlalchemy
+apscheduler
+requests
+dnspython
+pandas
+beautifulsoup4
+slack-sdk
+python-telegram-bot
+flask-mail
