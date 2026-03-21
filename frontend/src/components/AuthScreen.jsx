@@ -12,16 +12,20 @@ export default function AuthScreen({ initialTab = 'login' }) {
   const [isSuccess, setIsSuccess] = useState(false)
 
   const handleLogin = async (e) => {
-    e.preventDefault()
-    setMessage('')
-    try {
-      const { data } = await client.post('/api/login', { email, password })
-      login(data)
-    } catch {
-      setMessage('Invalid credentials')
-      setIsSuccess(false)
-    }
+  e.preventDefault()
+  setMessage('')
+  try {
+    const { data } = await client.post('/api/login', { email, password })
+    // Store token in localStorage explicitly
+    if (data.token) localStorage.setItem('token', data.token)
+    if (data.is_admin !== undefined) localStorage.setItem('isAdmin', data.is_admin)
+    if (data.username) localStorage.setItem('username', data.username)
+    login(data)   // your context login
+  } catch {
+    setMessage('Invalid credentials')
+    setIsSuccess(false)
   }
+}
 
   const handleSignup = async (e) => {
     e.preventDefault()

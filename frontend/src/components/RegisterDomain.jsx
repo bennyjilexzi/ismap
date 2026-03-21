@@ -14,7 +14,10 @@ export default function RegisterDomain() {
     setLoading(true)
     setMessage('')
     try {
-      await client.post(`/register/${encodeURIComponent(newDomain.trim())}`)
+      await client.post(`/register/${encodeURIComponent(newDomain.trim())}`, 
+  { interval: scanInterval },
+  { headers: { 'Content-Type': 'application/json' } }
+);
       setMessage('Domain registered!')
       setIsSuccess(true)
     } catch {
