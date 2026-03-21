@@ -22,7 +22,7 @@ export default function ConfigureAlerts() {
     setLoading(true)
     setMessage('')
     try {
-      await client.post('/configure_alerts', alertConfig)
+      await client.post('/api/configure_alerts', alertConfig)
       setMessage('Settings saved!')
       setIsSuccess(true)
     } catch {

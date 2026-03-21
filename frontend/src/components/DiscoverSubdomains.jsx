@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import client from '../api/client'
 
 export default function DiscoverSubdomains() {
@@ -6,38 +6,107 @@ export default function DiscoverSubdomains() {
   const [results, setResults] = useState([])
   const [scanError, setScanError] = useState('')
   const [scanning, setScanning] = useState(false)
+  const abortControllerRef = useRef(null)
+
+  const stopScan = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+      setScanning(false)
+    }
+  }
 
   const handleDiscover = async (e) => {
     e.preventDefault()
     if (!scanDomain.trim()) return
+    
     setScanning(true)
     setScanError('')
     setResults([])
+
+    // Initialize AbortController
+    abortControllerRef.current = new AbortController()
+
     try {
-      const { data } = await client.get(`/discover/${encodeURIComponent(scanDomain.trim())}`)
-      const subs = (data.subdomains || []).map((s) => ({
-        ...s,
-        vulnerabilities: s.vulnerabilities || []
-      }))
-      setResults(subs)
-    } catch {
-      setScanError('Error scanning domain')
+      const response = await fetch(`${client.defaults.baseURL}/api/discover/${encodeURIComponent(scanDomain.trim())}`, {
+        signal: abortControllerRef.current.signal,
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+
+      if (!response.ok) throw new Error('Network response was not ok');
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop(); // Keep the last partial line
+
+        for (const line of lines) {
+          const trimmedLine = line.trim();
+          if (trimmedLine.startsWith('data: ')) {
+            try {
+              const result = JSON.parse(trimmedLine.substring(6));
+              if (result.error) {
+                setScanError(result.error);
+              } else if (result.keepalive) {
+                // ignore SSE keepalive heartbeat
+              } else {
+                setResults((prev) => {
+                  // Ensure no duplicates in the stream
+                  if (prev.some(r => r.subdomain === result.subdomain)) return prev;
+                  return [...prev, result];
+                });
+              }
+            } catch (parseErr) {
+              console.error('Error parsing SSE data:', parseErr, trimmedLine);
+            }
+          }
+        }
+      }
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        console.log('Scan aborted by user');
+      } else {
+        console.error('Discovery stream error:', err);
+        setScanError('Error scanning domain');
+      }
+    } finally {
+      setScanning(false)
+      abortControllerRef.current = null
     }
-    setScanning(false)
   }
 
   return (
     <div className="card">
       <div className="discover-header">
         <h2 className="section-title">Discover Subdomains</h2>
-        <button
-          type="button"
-          className="success"
-          onClick={handleDiscover}
-          disabled={scanning || !scanDomain.trim()}
-        >
-          {scanning ? 'Scanning…' : 'Start Scan'}
-        </button>
+        <div className="button-group">
+          {scanning ? (
+            <button
+              type="button"
+              className="error"
+              onClick={stopScan}
+            >
+              Stop Scan
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="success"
+              onClick={handleDiscover}
+              disabled={!scanDomain.trim()}
+            >
+              Start Scan
+            </button>
+          )}
+        </div>
       </div>
       <form onSubmit={handleDiscover}>
         <div className="form-group">
@@ -103,6 +172,7 @@ export default function DiscoverSubdomains() {
           gap: 1rem;
           margin-bottom: 1rem;
         }
+        .button-group { display: flex; gap: 0.5rem; }
         .form-group { margin-bottom: 0; }
         .progress-bar {
           height: 4px;
