@@ -27,7 +27,14 @@ from dns import resolver
 
 logger = logging.getLogger(__name__)
 
-socket.setdefaulttimeout(2)  # 2-second timeout for all socket/DNS operations
+socket.setdefaulttimeout(5)  # 5-second timeout for all socket/DNS operations
+
+# Create a custom resolver that specifically uses public nameservers 
+# to bypass rate-limited local systemd-resolved instances.
+PUBLIC_RESOLVER = resolver.Resolver(configure=False)
+PUBLIC_RESOLVER.nameservers = ['8.8.8.8', '1.1.1.1', '8.8.4.4', '1.0.0.1']
+PUBLIC_RESOLVER.timeout = 3
+PUBLIC_RESOLVER.lifetime = 3
 
 # ──────────────────────────────────────────────────────────────────────
 # Passive Enumeration
@@ -36,8 +43,15 @@ socket.setdefaulttimeout(2)  # 2-second timeout for all socket/DNS operations
 def fetch_crtsh(domain: str) -> set[str]:
     """Return subdomains from the crt.sh certificate-transparency log."""
     try:
-        url = f"https://crt.sh/?q=%25.{domain}&output=json"
-        resp = requests.get(url, timeout=10)
+        # Use crt.sh IPv4 directly because Python socket.getaddrinfo hangs on AAAA records 
+        # for crt.sh in some strict DNS environments, leading to NameResolutionError.
+        url = f"https://91.199.212.73/?q=%25.{domain}&output=json"
+        headers = {
+            "Host": "crt.sh",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
+        # Disable verify=False because the IP won't match the SSL cert for crt.sh directly
+        resp = requests.get(url, headers=headers, timeout=12, verify=False)
         resp.raise_for_status()
         subs: set[str] = set()
         for entry in resp.json():
@@ -70,9 +84,9 @@ def load_wordlist(path: str = "wordlist") -> list[str]:
 
 
 def _resolve_dns(subdomain: str) -> str | None:
-    """Helper to resolve a single subdomain."""
+    """Helper to resolve a single subdomain using public DNS."""
     try:
-        resolver.resolve(subdomain, "A")
+        PUBLIC_RESOLVER.resolve(subdomain, "A")
         return subdomain
     except Exception:
         return None
@@ -122,10 +136,10 @@ def detect_wildcard(domain: str) -> str | None:
     Return a random subdomain that resolves if the domain has wildcard DNS,
     or None if no wildcard is detected.
     """
-    rand_label = "".join(random.choices(string.ascii_lowercase, k=12))
+    rand_label = "".join(random.choices(string.ascii_lowercase, k=16))
     rand_sub = f"{rand_label}.{domain}"
     try:
-        resolver.resolve(rand_sub, "A")
+        PUBLIC_RESOLVER.resolve(rand_sub, "A")
         return rand_sub
     except Exception:
         return None
@@ -133,7 +147,7 @@ def detect_wildcard(domain: str) -> str | None:
 
 def _resolve_ips(subdomain: str) -> set[str]:
     try:
-        return {r.to_text() for r in resolver.resolve(subdomain, "A")}
+        return {r.to_text() for r in PUBLIC_RESOLVER.resolve(subdomain, "A")}
     except Exception:
         return set()
 
@@ -279,7 +293,7 @@ def discover_subdomains_iter(domain: str):
                 active_tasks[0] -= 1
             result_queue.put(("TICK", None))
             
-    val_executor = concurrent.futures.ThreadPoolExecutor(max_workers=100)
+    val_executor = concurrent.futures.ThreadPoolExecutor(max_workers=20)
 
     def process_candidate(sub: str):
         with seen_lock:
@@ -312,7 +326,7 @@ def discover_subdomains_iter(domain: str):
 
     def do_brute():
         try:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=50) as bf_exec:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=10) as bf_exec:
                 fut_to_sub = {bf_exec.submit(_resolve_dns, f"{w}.{domain}"): w for w in wordlist}
                 for f in concurrent.futures.as_completed(fut_to_sub):
                     sub = f.result()
