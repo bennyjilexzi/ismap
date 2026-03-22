@@ -28,7 +28,7 @@ import bcrypt
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from dotenv import load_dotenv
-from flask import Flask, Response, jsonify, request
+from flask import Flask, Response, jsonify, request, send_from_directory
 from flask_cors import CORS
 from flask_jwt_extended import (
     JWTManager,
@@ -60,8 +60,10 @@ logger = logging.getLogger(__name__)
 
 load_dotenv()
 
-app = Flask(__name__)
-app.config["JWT_SECRET_KEY"] = os.environ["JWT_SECRET_KEY"]  # Fails fast if not set
+app = Flask(__name__, static_folder='frontend/dist', static_url_path='/')
+app.config["JWT_SECRET_KEY"] = os.environ["JWT_SECRET_KEY"]
+app.config["JWT_TOKEN_LOCATION"] = ["headers", "query_string"]
+app.config["JWT_QUERY_STRING_NAME"] = "token"
 CORS(app, supports_credentials=True)
 jwt = JWTManager(app)
 
@@ -243,15 +245,12 @@ def monitor_domain(domain_id: int) -> None:
                     vulnerabilities=json.dumps(sub["vulnerabilities"]),
                 ))
 
-        # ── Alerts ────────────────────────────────────────────────────
-        alert_cfg = _get_alert_config()
-
+        # ── DB Alerts ──────────────────────────────────────────────────
         for sub in added:
             msg = (
                 f"🔔 New subdomain discovered: {sub['subdomain']}\n"
                 f"IP: {sub['ip']}\nStatus: {sub['status_code']}"
             )
-            send_alert("New Subdomain", sub["subdomain"], domain.name, alert_cfg, extra=msg)
             session.add(Alert(
                 domain_id=domain_id,
                 change_type="new",
@@ -264,7 +263,6 @@ def monitor_domain(domain_id: int) -> None:
                 f"⚠️ Subdomain removed: {sub['subdomain']}\n"
                 f"IP: {sub['ip']}\nStatus: {sub['status_code']}"
             )
-            send_alert("Removed Subdomain", sub["subdomain"], domain.name, alert_cfg, extra=msg)
             session.add(Alert(
                 domain_id=domain_id,
                 change_type="removed",
@@ -278,7 +276,6 @@ def monitor_domain(domain_id: int) -> None:
                 f"Old IP: {mod['old_ip']} → New IP: {mod['new_ip']}\n"
                 f"Old Status: {mod['old_status']} → New Status: {mod['new_status']}"
             )
-            send_alert("Modified Subdomain", mod["subdomain"], domain.name, alert_cfg, extra=msg)
             session.add(Alert(
                 domain_id=domain_id,
                 change_type="modified",
@@ -288,8 +285,57 @@ def monitor_domain(domain_id: int) -> None:
                 message=msg,
             ))
 
+        # ── External Webhook Alerts ────────────────────────────────────
+        alert_cfg = _get_alert_config()
+
+        if not prev_scan:
+            # Initial scan summary message
+            if current_results:
+                msg = f"🚀 Initial scan for *{domain.name}* completed! Discovered {len(current_results)} subdomains.\n\n"
+                msg += "*Subdomain List:*\n"
+                for s in current_results[:50]:
+                    msg += f"• {s['subdomain']} ({s['ip']})\n"
+                if len(current_results) > 50:
+                    msg += f"... and {len(current_results) - 50} more."
+                
+                send_alert("Initial Scan", "ALL", domain.name, alert_cfg, extra=msg)
+        else:
+            # Report for subsequent scans (always sent)
+            msg_lines = [f"🚨 *ISMAP Scan Report for {domain.name}* 🚨\n"]
+            
+            if not (added or removed or modified):
+                msg_lines.append("✅ No changes detected in this scan.")
+            else:
+                if added:
+                    msg_lines.append(f"*[+] Added ({len(added)})*")
+                    for a in added[:10]:
+                        msg_lines.append(f"  • {a['subdomain']}")
+                    if len(added) > 10:
+                        msg_lines.append(f"  • ... and {len(added) - 10} more")
+                    msg_lines.append("")
+                
+                if removed:
+                    msg_lines.append(f"*[-] Removed ({len(removed)})*")
+                    for r in removed[:10]:
+                        msg_lines.append(f"  • {r['subdomain']}")
+                    if len(removed) > 10:
+                        msg_lines.append(f"  • ... and {len(removed) - 10} more")
+                    msg_lines.append("")
+                    
+                if modified:
+                    msg_lines.append(f"*[~] Modified ({len(modified)})*")
+                    for m in modified[:10]:
+                        msg_lines.append(f"  • {m['subdomain']} (IP: {m['old_ip']} → {m['new_ip']})")
+                    if len(modified) > 10:
+                        msg_lines.append(f"  • ... and {len(modified) - 10} more")
+                    msg_lines.append("")
+
+            msg_lines.append(f"\nTotal subdomains active: {len(current_results)}")
+            summary_msg = "\n".join(msg_lines).strip()
+            send_alert("Scan Report", "ALL", domain.name, alert_cfg, extra=summary_msg)
+
         logger.info(
-            "Scan complete for '%s' — +%d -%d ~%d",
+            "Scan complete for '%s' — +%d -%d ~%d (Report sent to Slack)",
             domain.name, len(added), len(removed), len(modified),
         )
 
@@ -397,6 +443,47 @@ def register_domain(domain_name: str):
 
 
 # ──────────────────────────────────────────────────────────────────────
+# Admin management routes
+# ──────────────────────────────────────────────────────────────────────
+
+@app.route("/api/admin/domains", methods=["GET"])
+@jwt_required()
+def admin_list_domains():
+    with get_session() as session:
+        _, err = _require_admin(session)
+        if err: return err
+        domains = session.query(Domain).all()
+        return jsonify([
+            {"id": d.id, "name": d.name, "interval": d.interval, "user_id": d.user_id}
+            for d in domains
+        ])
+
+
+@app.route("/api/admin/history", methods=["GET"])
+@jwt_required()
+def admin_global_history():
+    with get_session() as session:
+        _, err = _require_admin(session)
+        if err: return err
+        scans = (
+            session.query(ScanResult)
+            .join(Domain)
+            .order_by(desc(ScanResult.timestamp))
+            .limit(50)
+            .all()
+        )
+        return jsonify([
+            {
+                "id": s.id,
+                "domain": s.domain.name,
+                "timestamp": s.timestamp.isoformat(),
+                "changes": json.loads(s.changes)
+            }
+            for s in scans
+        ])
+
+
+# ──────────────────────────────────────────────────────────────────────
 # Subdomain / scan / report routes
 # ──────────────────────────────────────────────────────────────────────
 
@@ -442,20 +529,45 @@ def list_scans(domain_id: int):
 @app.route("/api/report/<int:scan_id>", methods=["GET"])
 @jwt_required()
 def get_report(scan_id: int):
+    fmt = request.args.get("format", "json").lower()
     with get_session() as session:
         scan = session.query(ScanResult).filter_by(id=scan_id).first()
         if not scan:
             return jsonify({"message": "Scan not found"}), 404
-        domain = session.query(Domain).filter_by(
-            id=scan.domain_id, user_id=_current_user_id()
-        ).first()
-        if not domain:
+        
+        # Admin can see any report; user can only see their own
+        user_id = _current_user_id()
+        user = session.query(User).filter_by(id=user_id).first()
+        domain = session.query(Domain).filter_by(id=scan.domain_id).first()
+        
+        if not user.is_admin and domain.user_id != user_id:
             return jsonify({"message": "Access denied"}), 403
+
+        data = json.loads(scan.data)
+        changes = json.loads(scan.changes)
+
+        if fmt == "txt":
+            report_txt = f"ISMAP SCAN REPORT\n"
+            report_txt += f"Domain: {domain.name}\n"
+            report_txt += f"Timestamp: {scan.timestamp.isoformat()}\n"
+            report_txt += "="*40 + "\n\n"
+            
+            report_txt += "CHANGES:\n"
+            report_txt += f"  Added: {len(changes.get('added', []))}\n"
+            report_txt += f"  Removed: {len(changes.get('removed', []))}\n"
+            report_txt += f"  Modified: {len(changes.get('modified', []))}\n\n"
+            
+            report_txt += "SUBDOMAINS:\n"
+            for sub in data:
+                report_txt += f"- {sub['subdomain']} (IP: {sub['ip']}, Status: {sub['status_code']}, Title: {sub['title']})\n"
+            
+            return Response(report_txt, mimetype="text/plain", headers={"Content-disposition": f"attachment; filename=report_{scan_id}.txt"})
+
         return jsonify({
             "domain": domain.name,
             "timestamp": scan.timestamp.isoformat(),
-            "subdomains": json.loads(scan.data),
-            "changes": json.loads(scan.changes),
+            "subdomains": data,
+            "changes": changes,
         })
 
 
@@ -596,11 +708,39 @@ def configure_alerts():
 @jwt_required()
 def discover(domain: str):
     """Run a one-off subdomain discovery scan and stream results in real-time."""
+    current_user_id = _current_user_id()
+
     def generate():
+        all_results = []
         try:
             for result in discover_subdomains_iter(domain):
+                if not result.get("keepalive"):
+                    all_results.append(result)
                 # Yield each result as an SSE data packet
                 yield f"data: {json.dumps(result)}\n\n"
+            
+            # Once stream finishes, save a ScanResult entry for the history
+            if all_results:
+                with get_session() as session:
+                    # Check if domain exists for this user, or just record it
+                    d = session.query(Domain).filter_by(name=domain.lower(), user_id=current_user_id).first()
+                    # If domain is not registered, we can't easily link it to a ScanResult unless we want to allow it
+                    # But for history visibility, let's just record it if the domain is registered
+                    if d:
+                        new_scan = ScanResult(
+                            domain_id=d.id,
+                            raw_data=json.dumps(all_results),
+                            changes=json.dumps({
+                                "summary": f"Manual scan: {len(all_results)} subdomains found.",
+                                "added": all_results,
+                                "removed": [],
+                                "modified": []
+                            })
+                        )
+                        session.add(new_scan)
+                        session.commit()
+                        logger.info("Saved manual scan result for %s", domain)
+
         except Exception as exc:
             logger.error("Streaming discovery failed for '%s': %s", domain, exc)
             yield f"data: {json.dumps({'error': str(exc)})}\n\n"
@@ -610,6 +750,15 @@ def discover(domain: str):
 
 # ──────────────────────────────────────────────────────────────────────
 # Entry point
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def serve(path):
+    if path != "" and os.path.exists(os.path.join(app.static_folder, path)):
+        return send_from_directory(app.static_folder, path)
+    else:
+        return send_from_directory(app.static_folder, 'index.html')
+
+
 # ──────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

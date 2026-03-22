@@ -22,56 +22,11 @@ export default function ScanHistory() {
     setLoading(false)
   }
 
-  const downloadReport = async (scanId) => {
-    try {
-      const { data } = await client.get(`/api/report/${scanId}`)
-      
-      let text = `ISMAP Scan Report\n`
-      text += `=================\n`
-      text += `Domain: ${data.domain}\n`
-      text += `Timestamp: ${data.timestamp}\n\n`
-      
-      const { added = [], removed = [], modified = [] } = data.changes || {}
-      text += `Summary of Changes\n`
-      text += `------------------\n`
-      text += `Added: ${added.length}\n`
-      added.forEach(sub => text += `  + ${sub}\n`)
-      text += `Removed: ${removed.length}\n`
-      removed.forEach(sub => text += `  - ${sub}\n`)
-      text += `Modified: ${modified.length}\n`
-      modified.forEach(m => text += `  ~ ${m.subdomain} (IP: ${m.old_ip} -> ${m.new_ip}, Status: ${m.old_status} -> ${m.new_status})\n`)
-      
-      text += `\nDiscovered Subdomains (${data.subdomains.length} total)\n`
-      text += `---------------------------------\n`
-      data.subdomains.forEach((sub, i) => {
-        text += `${i + 1}. ${sub.subdomain}\n`
-        text += `   IP: ${sub.ip || 'N/A'}\n`
-        text += `   Status: ${sub.status_code || 'N/A'}\n`
-        text += `   Title: ${sub.title || 'N/A'}\n`
-        if (sub.vulnerabilities && sub.vulnerabilities.length > 0) {
-          text += `   Vulnerabilities:\n`
-          sub.vulnerabilities.forEach(v => {
-             text += `     - [${v.severity}] ${v.name || v}\n`
-          })
-        } else {
-          text += `   Vulnerabilities: None\n`
-        }
-        text += `\n`
-      })
-      
-      const blob = new Blob([text], { type: 'text/plain' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `scan_report_${data.domain}_${scanId}.txt`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
-    } catch (err) {
-      console.error(err)
-      alert("Failed to download report.")
-    }
+  const downloadReport = (scanId) => {
+    // Navigate to the backend download URL directly for TXT
+    const token = localStorage.getItem('token')
+    const url = `${client.defaults.baseURL}/api/report/${scanId}?format=txt&token=${token}`
+    window.open(url, '_blank')
   }
 
   return (

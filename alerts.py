@@ -22,7 +22,9 @@ def send_slack_alert(message: str, webhook_url: str) -> None:
     if not webhook_url:
         return
     try:
-        requests.post(webhook_url, json={"text": message}, timeout=5)
+        resp = requests.post(webhook_url, json={"text": message}, timeout=5)
+        resp.raise_for_status()
+        logger.info("Slack alert sent successfully (status %d)", resp.status_code)
     except Exception as exc:
         logger.error("Slack alert failed: %s", exc)
 

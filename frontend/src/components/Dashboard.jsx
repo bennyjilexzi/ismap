@@ -6,6 +6,7 @@ import ConfigureAlerts from './ConfigureAlerts'
 import DiscoverSubdomains from './DiscoverSubdomains'
 import ScanHistory from './ScanHistory'
 import ExportReport from './ExportReport'
+import AdminHistory from './AdminHistory'
 
 export default function Dashboard() {
   const { user } = useAuth()
@@ -13,6 +14,11 @@ export default function Dashboard() {
   return (
     <Layout username={user?.username} isAdmin={user?.isAdmin}>
       <div className="dashboard-grid">
+        {user?.isAdmin && (
+          <section className="dashboard-section full-width">
+            <AdminHistory />
+          </section>
+        )}
         <section className="dashboard-section">
           <RegisterDomain />
         </section>

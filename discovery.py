@@ -365,4 +365,4 @@ def discover_subdomains_iter(domain: str):
 
 def discover_subdomains(domain: str) -> list[dict]:
     """Original non-streaming version (returns the full list at once)."""
-    return list(discover_subdomains_iter(domain))
+    return [r for r in discover_subdomains_iter(domain) if "subdomain" in r]
