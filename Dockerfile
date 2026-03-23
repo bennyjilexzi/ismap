@@ -30,4 +30,5 @@ EXPOSE 5000
 ENV FLASK_APP=app.py
 ENV PORT=5000
 
-CMD ["python", "app.py"]
+RUN chmod +x start.sh
+ENTRYPOINT ["./start.sh"]

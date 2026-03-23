@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from dotenv import load_dotenv
 from sqlalchemy import (
     Boolean, Column, DateTime, ForeignKey,
-    Integer, String, Text, create_engine,
+    Integer, String, Text, create_engine, UniqueConstraint
 )
 from sqlalchemy.orm import DeclarativeBase, relationship, sessionmaker
 
@@ -21,7 +21,11 @@ load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///ismap.db")
 
-engine = create_engine(DATABASE_URL, echo=False)
+engine = create_engine(
+    DATABASE_URL, 
+    echo=False, 
+    connect_args={"timeout": 30} if "sqlite" in DATABASE_URL else {}
+)
 Session = sessionmaker(bind=engine)
 
 
@@ -51,10 +55,12 @@ class Domain(Base):
     __tablename__ = "domains"
 
     id = Column(Integer, primary_key=True)
-    name = Column(String, unique=True, nullable=False)
+    name = Column(String, nullable=False)
     interval = Column(Integer, default=6)  # scan interval in hours
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime(timezone=True), default=_utcnow)
+
+    __table_args__ = (UniqueConstraint('name', 'user_id', name='_name_user_uc'),)
 
     user = relationship("User", back_populates="domains")
     subdomains = relationship("Subdomain", back_populates="domain")
