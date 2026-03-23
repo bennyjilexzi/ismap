@@ -25,6 +25,31 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 
 import bcrypt
+from werkzeug.security import generate_password_hash, check_password_hash as werkzeug_check_password_hash
+
+def check_password(password_hash, password):
+    """
+    Check password against both modern Werkzeug (scrypt) and legacy bcrypt hashes.
+    """
+    if not password_hash:
+        return False
+    
+    # Standard bcrypt hashes used in older versions of this app start with $2b$
+    if password_hash.startswith('$2b$'):
+        try:
+            return bcrypt.checkpw(password.encode('utf-8'), password_hash.encode('utf-8'))
+        except Exception as e:
+            logger.error(f"Bcrypt verification error: {e}")
+            return False
+            
+    try:
+        return werkzeug_check_password_hash(password_hash, password)
+    except ValueError:
+        # This handles cases where Werkzeug 3.x encounters a hash it doesn't recognize
+        # even if it didn't start with $2b$ (e.g. other legacy formats)
+        logger.warning("Incompatible hash format found. Needs reset.")
+        return False
+
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from dotenv import load_dotenv
@@ -373,7 +398,7 @@ def register():
     if not username or not email or not password:
         return jsonify({"message": "username, email, and password are required"}), 400
 
-    hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+    hashed = generate_password_hash(password)
     try:
         with get_session() as session:
             # First registered user becomes admin automatically
@@ -395,10 +420,12 @@ def login():
 
     with get_session() as session:
         user = session.query(User).filter_by(email=email).first()
-        if not user or not bcrypt.checkpw(password.encode(), user.password.encode()):
+        if not user or not check_password(user.password, password):
             return jsonify({"message": "Invalid email or password"}), 401
+            
         token = create_access_token(identity=str(user.id))
-        return jsonify({"token": token, "is_admin": user.is_admin, "username": user.username})
+
+        return jsonify({"token": token, "is_admin": bool(user.is_admin), "username": user.username})
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -420,26 +447,32 @@ def register_domain(domain_name: str):
     interval = int(data.get("interval", 6))
     user_id = _current_user_id()
 
-    with get_session() as session:
-        existing = session.query(Domain).filter_by(name=domain_name, user_id=user_id).first()
-        if existing:
-            existing.interval = interval
-            domain_id = existing.id
+    try:
+        with get_session() as session:
+            existing = session.query(Domain).filter_by(name=domain_name, user_id=user_id).first()
+            if existing:
+                existing.interval = interval
+                domain_id = existing.id
+                schedule_domain(domain_id, domain_name, interval)
+                return jsonify({"message": "Domain interval updated"})
+
+            new_domain = Domain(name=domain_name, interval=interval, user_id=user_id)
+            session.add(new_domain)
+            session.flush()  # populate new_domain.id before commit
+            domain_id = new_domain.id
             schedule_domain(domain_id, domain_name, interval)
-            return jsonify({"message": "Domain interval updated"})
 
-        new_domain = Domain(name=domain_name, interval=interval, user_id=user_id)
-        session.add(new_domain)
-        session.flush()  # populate new_domain.id before commit
-        domain_id = new_domain.id
-        schedule_domain(domain_id, domain_name, interval)
-
-    # Run initial scan in background so the HTTP response returns immediately
-    threading.Thread(
-        target=monitor_domain, args=[domain_id], daemon=True, name=f"scan-{domain_id}"
-    ).start()
-    logger.info("Initial scan triggered for '%s' (background)", domain_name)
-    return jsonify({"message": f"{domain_name} registered"}), 201
+        # Run initial scan in background
+        threading.Thread(
+            target=monitor_domain, args=[domain_id], daemon=True, name=f"scan-{domain_id}"
+        ).start()
+        logger.info("Initial scan triggered for '%s' (background)", domain_name)
+        return jsonify({"message": f"{domain_name} registered"}), 201
+    except IntegrityError:
+        return jsonify({"message": "Database conflict. This domain might be already registered."}), 409
+    except Exception as e:
+        logger.error("Registration error: %s", e)
+        return jsonify({"message": "Internal server error during registration"}), 500
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -729,7 +762,7 @@ def discover(domain: str):
                     if d:
                         new_scan = ScanResult(
                             domain_id=d.id,
-                            raw_data=json.dumps(all_results),
+                            data=json.dumps(all_results),
                             changes=json.dumps({
                                 "summary": f"Manual scan: {len(all_results)} subdomains found.",
                                 "added": all_results,
