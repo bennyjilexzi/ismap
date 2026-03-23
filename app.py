@@ -89,7 +89,8 @@ app = Flask(__name__, static_folder='frontend/dist', static_url_path='/')
 app.config["JWT_SECRET_KEY"] = os.environ["JWT_SECRET_KEY"]
 app.config["JWT_TOKEN_LOCATION"] = ["headers", "query_string"]
 app.config["JWT_QUERY_STRING_NAME"] = "token"
-CORS(app, supports_credentials=True)
+CORS(app, supports_credentials=True, origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:5000", "http://127.0.0.1:5000"])
+
 jwt = JWTManager(app)
 
 # ──────────────────────────────────────────────────────────────────────
@@ -392,7 +393,7 @@ def _require_admin(session):
 def register():
     data = request.get_json(silent=True) or {}
     username = data.get("username", "").strip()
-    email = data.get("email", "").strip()
+    email = data.get("email", "").strip().lower()
     password = data.get("password", "")
 
     if not username or not email or not password:
@@ -412,7 +413,7 @@ def register():
 @app.route("/api/login", methods=["POST"])
 def login():
     data = request.get_json(silent=True) or {}
-    email = data.get("email", "").strip()
+    email = data.get("email", "").strip().lower()
     password = data.get("password", "")
 
     if not email or not password:

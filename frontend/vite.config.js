@@ -6,11 +6,18 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api': 'http://localhost:5000',
-      '/register': 'http://localhost:5000',
-      '/discover': 'http://localhost:5000',
-      '/configure_alerts': 'http://localhost:5000',
-      '/scan': 'http://localhost:5000'
+      '/api': {
+        target: 'http://localhost:5000',
+        changeOrigin: true,
+        // Required for Server-Sent Events (SSE) streaming to work correctly
+        // through the Vite dev proxy
+        configure: (proxy) => {
+          proxy.on('proxyReq', (proxyReq) => {
+            // Remove any encoding that would prevent streaming
+            proxyReq.removeHeader('accept-encoding')
+          })
+        }
+      }
     }
   }
 })
