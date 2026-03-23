@@ -30,8 +30,8 @@ export default function AdminHistory() {
 
   const downloadReport = (scanId) => {
     // Navigate to the backend download URL directly for TXT
-    const token = localStorage.getItem('token')
-    const url = `${client.defaults.baseURL}/api/report/${scanId}?format=txt&token=${token}`
+    const baseUrl = client.defaults.baseURL === '/' ? '' : client.defaults.baseURL;
+    const url = `${baseUrl}/api/report/${scanId}?format=txt&token=${token}`
     window.open(url, '_blank')
   }
 

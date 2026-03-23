@@ -26,8 +26,9 @@ export default function DiscoverSubdomains() {
     // Initialize AbortController
     abortControllerRef.current = new AbortController()
 
+    const baseUrl = client.defaults.baseURL === '/' ? '' : client.defaults.baseURL;
     try {
-      const response = await fetch(`${client.defaults.baseURL}/api/discover/${encodeURIComponent(scanDomain.trim())}`, {
+      const response = await fetch(`${baseUrl}/api/discover/${encodeURIComponent(scanDomain.trim())}`, {
         signal: abortControllerRef.current.signal,
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`

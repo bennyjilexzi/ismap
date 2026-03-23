@@ -23,7 +23,8 @@ export default function ExportReport() {
         const { data: latestScan } = await client.get(`/api/history/${encodeURIComponent(exportDomain.trim())}`)
         if (latestScan && latestScan.length > 0) {
           const scanId = latestScan[0].id
-          const url = `${client.defaults.baseURL}/api/report/${scanId}?format=txt&token=${token}`
+          const baseUrl = client.defaults.baseURL === '/' ? '' : client.defaults.baseURL;
+          const url = `${baseUrl}/api/report/${scanId}?format=txt&token=${token}`
           window.open(url, '_blank')
         } else {
           setExportError('No scan history found for this domain.')
