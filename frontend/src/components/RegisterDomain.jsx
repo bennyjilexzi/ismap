@@ -16,9 +16,12 @@ export default function RegisterDomain() {
     try {
       await client.post(`/api/register/${encodeURIComponent(newDomain.trim())}`, { interval: scanInterval });
       setMessage('Domain registered!')
-      setIsSuccess(true)
-    } catch {
-      setMessage('Error registering domain')
+    } catch (err) {
+      if (err.response && err.response.data && err.response.data.message) {
+        setMessage(err.response.data.message)
+      } else {
+        setMessage('Error registering domain')
+      }
       setIsSuccess(false)
     }
     setLoading(false)

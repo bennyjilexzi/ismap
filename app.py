@@ -450,12 +450,10 @@ def register_domain(domain_name: str):
 
     try:
         with get_session() as session:
-            existing = session.query(Domain).filter_by(name=domain_name, user_id=user_id).first()
+            domain_name = domain_name.lower()
+            existing = session.query(Domain).filter_by(name=domain_name).first()
             if existing:
-                existing.interval = interval
-                domain_id = existing.id
-                schedule_domain(domain_id, domain_name, interval)
-                return jsonify({"message": "Domain interval updated"})
+                return jsonify({"message": "Domain already registered"}), 409
 
             new_domain = Domain(name=domain_name, interval=interval, user_id=user_id)
             session.add(new_domain)
