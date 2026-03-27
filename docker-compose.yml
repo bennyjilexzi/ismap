@@ -1,12 +1,14 @@
 services:
   ismap:
     build: .
+    container_name: ismap-app
     ports:
       - "5000:5000"
     volumes:
-      - ./ismap.db:/app/ismap.db
+      - ismap_data:/app/data
     environment:
-      - DATABASE_URL=sqlite:///ismap.db
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-supersecretkey}
-      - VITE_API_URL=http://localhost:5000
+      - DATABASE_URL=sqlite:////app/data/ismap.db
     restart: always
+
+volumes:
+  ismap_data:

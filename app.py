@@ -792,13 +792,19 @@ def serve(path):
 
 
 # ──────────────────────────────────────────────────────────────────────
+# Startup Initialization
+# ──────────────────────────────────────────────────────────────────────
+
+# Load initial alert config into memory cache
+_set_alert_config(_load_alert_config())
+
+# Start background scheduler and register all stored domains
+if not scheduler.running:
+    scheduler.start()
+    try:
+        init_scheduler()
+    except Exception as e:
+        logger.error(f"Failed to initialize scheduler: {e}")
 
 if __name__ == "__main__":
-    # Load initial alert config into memory cache
-    _set_alert_config(_load_alert_config())
-
-    # Start background scheduler and register all stored domains
-    scheduler.start()
-    init_scheduler()
-
     app.run(debug=False)
