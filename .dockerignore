@@ -1,0 +1,14 @@
+venv/
+node_modules/
+frontend/node_modules/
+ismap.db
+*.pyc
+__pycache__/
+.git/
+.env
+*.log
+frontend/dist/
+wordlist.txt
+wordlist
+image.png
+/home/benny/.gemini/

@@ -3,9 +3,13 @@ services:
     name: ismap-scanner
     runtime: docker
     plan: free
+    healthCheckPath: /
     envVars:
       - key: JWT_SECRET_KEY
         generateValue: true
+      - key: PORT
+        value: 10000
       - key: DATABASE_URL
         value: sqlite:///ismap.db
+
 
