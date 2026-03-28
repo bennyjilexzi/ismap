@@ -340,10 +340,13 @@ def monitor_domain(domain_id: int) -> None:
             if current_results:
                 msg = f"🚀 Initial scan for *{domain.name}* completed! Discovered {len(current_results)} subdomains.\n\n"
                 msg += "*Subdomain List:*\n"
-                for s in current_results[:50]:
+                # Use list() or a temporary variable to clarify the type for the linter
+                results_to_show = list(current_results[:50])
+                for s in results_to_show:
                     msg += f"• {s['subdomain']} ({s['ip']})\n"
                 if len(current_results) > 50:
                     msg += f"... and {len(current_results) - 50} more."
+
                 
                 send_alert("Initial Scan", "ALL", domain.name, alert_cfg, extra=msg)
         else:
@@ -355,26 +358,32 @@ def monitor_domain(domain_id: int) -> None:
             else:
                 if added:
                     msg_lines.append(f"*[+] Added ({len(added)})*")
-                    for a in added[:10]:
+                    added_to_show = list(added[:10])
+                    for a in added_to_show:
                         msg_lines.append(f"  • {a['subdomain']}")
                     if len(added) > 10:
                         msg_lines.append(f"  • ... and {len(added) - 10} more")
                     msg_lines.append("")
+
                 
                 if removed:
                     msg_lines.append(f"*[-] Removed ({len(removed)})*")
-                    for r in removed[:10]:
+                    removed_to_show = list(removed[:10])
+                    for r in removed_to_show:
                         msg_lines.append(f"  • {r['subdomain']}")
                     if len(removed) > 10:
                         msg_lines.append(f"  • ... and {len(removed) - 10} more")
                     msg_lines.append("")
+
                     
                 if modified:
                     msg_lines.append(f"*[~] Modified ({len(modified)})*")
-                    for m in modified[:10]:
+                    modified_to_show = list(modified[:10])
+                    for m in modified_to_show:
                         msg_lines.append(f"  • {m['subdomain']} (IP: {m['old_ip']} → {m['new_ip']})")
                     if len(modified) > 10:
                         msg_lines.append(f"  • ... and {len(modified) - 10} more")
+
                     msg_lines.append("")
 
             msg_lines.append(f"\nTotal subdomains active: {len(current_results)}")
