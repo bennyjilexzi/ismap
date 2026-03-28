@@ -21,12 +21,25 @@ load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///ismap.db")
 
+from sqlalchemy import event
+
 engine = create_engine(
     DATABASE_URL, 
     echo=False, 
-    connect_args={"timeout": 30} if "sqlite" in DATABASE_URL else {}
+    connect_args={"timeout": 60} if "sqlite" in DATABASE_URL else {}
 )
+
+# Enable WAL mode for SQLite to prevent "database is locked" errors
+@event.listens_for(engine, "connect")
+def set_sqlite_pragma(dbapi_connection, connection_record):
+    if "sqlite" in DATABASE_URL:
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.close()
+
 Session = sessionmaker(bind=engine)
+
 
 
 def _utcnow() -> datetime:

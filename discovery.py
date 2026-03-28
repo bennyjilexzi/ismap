@@ -95,7 +95,7 @@ def _resolve_dns(subdomain: str) -> str | None:
 def brute_force(domain: str, wordlist: list[str]) -> set[str]:
     """Resolve candidate subdomains via DNS in parallel."""
     results: set[str] = set()
-    with concurrent.futures.ThreadPoolExecutor(max_workers=100) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=25) as executor:
         subdomains = [f"{word}.{domain}" for word in wordlist]
         future_map = {executor.submit(_resolve_dns, sub): sub for sub in subdomains}
         for future in concurrent.futures.as_completed(future_map):
@@ -103,6 +103,7 @@ def brute_force(domain: str, wordlist: list[str]) -> set[str]:
             if res:
                 results.add(res)
     return results
+
 
 
 # ──────────────────────────────────────────────────────────────────────
