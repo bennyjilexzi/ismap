@@ -1,3 +1,4 @@
+#!/bin/bash
 # Ensure the data directory exists
 mkdir -p /app/data
 
@@ -11,5 +12,3 @@ fi
 # We use the PORT environment variable if provided (common on Render/Heroku)
 PORT="${PORT:-5000}"
 exec gunicorn --bind "0.0.0.0:${PORT}" --timeout 120 --workers 1 app:app
-
-
