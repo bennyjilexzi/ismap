@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: ismap-scanner
+    runtime: docker
+    plan: starter # Starter plan required for persistent disk
+    envVars:
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        value: sqlite:////app/data/ismap.db
+    disk:
+      name: ismap-data
+      mountPath: /app/data
+      sizeGB: 1
